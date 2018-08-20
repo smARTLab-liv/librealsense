@@ -1,126 +1,81 @@
-# Intel® RealSense™ Cross Platform API
+<p align="center"><img src="doc/img/realsense.png" width="70%" /><br><br></p>
 
-[ ![Release] [release-image] ] [releases]
-[ ![License] [license-image] ] [license]
+-----------------
 
-[release-image]: http://img.shields.io/badge/release-0.9.1-blue.svg?style=flat
-[releases]: https://github.com/IntelRealSense/librealsense
-
-[license-image]: http://img.shields.io/badge/license-Apache--2-blue.svg?style=flat
-[license]: LICENSE
-
-Platform | Build Status |
+Linux/MacOS | Windows |
 -------- | ------------ |
-Linux and OS X | [![Build Status](https://travis-ci.org/IntelRealSense/librealsense.svg?branch=master)](https://travis-ci.org/IntelRealSense/librealsense) |
-Windows | [![Build status](https://ci.appveyor.com/api/projects/status/y9f8qcebnb9v41y4?svg=true)](https://ci.appveyor.com/project/ddiakopoulos/librealsense) | 
+[![Build Status](https://travis-ci.org/IntelRealSense/librealsense.svg?branch=development)](https://travis-ci.org/IntelRealSense/librealsense) | [![Build status](https://ci.appveyor.com/api/projects/status/6u04bgmpwfejpgo8?svg=true)](https://ci.appveyor.com/project/dorodnic/librealsense-s4xnv) |
 
-This project is a cross-platform library (Linux, OSX, Windows) for capturing data from the Intel® RealSense™ F200, SR300 and R200 cameras. This effort was initiated to better support researchers, creative coders, and app developers in domains such as robotics, virtual reality, and the internet of things. Several often-requested features of RealSense™ devices are implemented in this project, including multi-camera capture.
+-----------------
 
-Developer kits containing the necessary hardware to use this library are available for purchase at [this link](http://click.intel.com/realsense.html). This project is separate from the production software stack available in the [Intel® RealSense™ SDK](https://software.intel.com/en-us/intel-realsense-sdk), namely that this library only encompasses camera capture functionality without additional computer vision algorithms.
+## Overview
+**Intel® RealSense™ SDK 2.0** is a cross-platform library for Intel® RealSense™ depth cameras (D400 series and the SR300). 
 
-The Intel® RealSense™ Cross Platform API is experimental and not an official Intel product. It is subject to incompatible API changes in future updates. Breaking API changes are noted through release numbers with [semver](http://semver.org/).
+> :pushpin: For other Intel® RealSense™ devices (F200, R200, LR200 and ZR300), please refer to the [latest legacy release](https://github.com/IntelRealSense/librealsense/tree/v1.12.1).
 
-The project requires two external dependencies, GLFW3 (all platforms) and libusb-1.0 (Mac/Linux). These dependencies should be gathered through manual steps that are enumerated as part of this readme file (i.e. these packages must be installed with apt-get on Linux and Homebrew on OSX). GLFW is not required for the core library and is only used for examples.
+The SDK allows depth and color streaming, and provides intrinsic and extrinsic calibration information.
+The library also offers synthetic streams (pointcloud, depth aligned to color and vise-versa), and a built-in support for [record and playback](./src/media/readme.md) of streaming sessions.
 
-# Table of Contents
-* [Compatible Devices](#compatible-devices)
-* [Supported Platforms](#compatible-platforms)
-* [Compatible Languages](#supported-languages-and-frameworks)
-* [Functionality](#functionality)
-* [Installation Guide](#installation-guide)
-* [Hardware Requirements](#hardware-requirements)
-* [Integrations](#integrations)
-* [Documentation](#documentation)
+Developer kits containing the necessary hardware to use this library are available for purchase at [realsense.intel.com/buy](https://realsense.intel.com/buy).
+Information about the Intel® RealSense™ technology at [realsense.intel.com](https://realsense.intel.com)
 
-## Compatible Devices
+> :open_file_folder: Don't have access to a RealSense camera? Check-out [sample data](./doc/sample-data.md)
 
-1. RealSense R200
-2. RealSense F200
-3. RealSense SR300
+## Download and Install
+* **Download** - The latest releases including the Intel RealSense SDK, Viewer and Depth Quality tools are available at: [**latest releases**](https://github.com/IntelRealSense/librealsense/releases). Please check the [**release notes**](https://github.com/IntelRealSense/librealsense/wiki/Release-Notes) for the supported platforms, new features and capabilities, known issues, how to upgrade the Firmware and more.
 
-## Compatible Platforms
+* **Install** - You can also install or build from source the SDK (on [Linux](./doc/distribution_linux.md) \ [Windows](./doc/distribution_windows.md) \ [Mac OS](doc/installation_osx.md)), connect your D400 depth camera and you are ready to start writing your first application. (For Android limited support, please refer to [Android](./doc/android/Android.md))
 
-The library is written in standards-conforming C++11 and relies only on the C89 ABI for its public interface. It is developed and tested on the following platforms:
+> **Support & Issues**: If you need product support (e.g. ask a question about / are having problems with the device), please check the [FAQ & Troubleshooting](https://github.com/IntelRealSense/librealsense/wiki/Troubleshooting-Q%26A) section.
+> If not covered there, please search our [Closed GitHub Issues](https://github.com/IntelRealSense/librealsense/issues?utf8=%E2%9C%93&q=is%3Aclosed) page,  [Community](https://communities.intel.com/community/tech/realsense) and [Support](https://www.intel.com/content/www/us/en/support/emerging-technologies/intel-realsense-technology.html) sites.
+> If you still cannot find an answer to your question, please [open a new issue](https://github.com/IntelRealSense/librealsense/issues/new).
 
-1. Windows 8.1 (Visual Studio 2013 Update 5)
-2. Ubuntu 14.04.03 LTS x64 (GCC 4.9 toolchain)
-3. Mac OS X 10.7+ (Clang toolchain)
+## What’s included in the SDK:
+| What | Description | Download link|
+| ------- | ------- | ------- |
+| **[Intel® RealSense™ Viewer](./tools/realsense-viewer)** | With this application, you can quickly access your Intel® RealSense™ Depth Camera to view the depth stream, visualize point clouds, record and playback streams, configure your camera settings, modify advanced controls, enable depth visualization and post processing  and much more. | [**Intel.RealSense.Viewer.exe**](https://github.com/IntelRealSense/librealsense/releases) |
+| **[Depth Quality Tool](./tools/depth-quality)** | This application allows you to test the camera’s depth quality, including: standard deviation from plane fit, normalized RMS – the subpixel accuracy, distance accuracy and fill rate. You should be able to easily get and interpret several of the depth quality metrics and record and save the data for offline analysis. |[**Depth.Quality.Tool.exe**](https://github.com/IntelRealSense/librealsense/releases) |
+| **[Debug Tools](./tools/)** | Device enumeration, FW logger, etc as can be seen at the tools directory | Included in [**Intel.RealSense.SDK.exe**](https://github.com/IntelRealSense/librealsense/releases)|
+| **[Code Samples](./examples)** |These simple examples demonstrate how to easily use the SDK to include code snippets that access the camera into your applications. Check some of the [**C++ examples**](./examples) including capture, pointcloud and more and basic [**C examples**](./examples/C) | Included in [**Intel.RealSense.SDK.exe**](https://github.com/IntelRealSense/librealsense/releases) |
+| **[Wrappers](https://github.com/IntelRealSense/librealsense/tree/development/wrappers)** | [Python](./wrappers/python), [C#/.NET](./wrappers/csharp), [Node.js](./wrappers/nodejs) API, as well as integration with the following 3rd-party technologies: [ROS](https://github.com/intel-ros/realsense/releases), [LabVIEW](./wrappers/labview), [OpenCV](./wrappers/opencv), [PCL](./wrappers/pcl), [Unity](./wrappers/unity), and more to come, including Matlab and OpenNI. | |
 
-Neither libuvc nor V4L2 backends have been validated on Ubuntu 12.04 LTS or Ubuntu 15.10, and several attempts to bring cameras up on these platforms have been problematic due to the requirement of a patched uvcvideo driver. It may be possible to compile and run the library on other platforms. Please file an issue or submit a pull request if the library has been successfully ported to a platform.
 
-## Supported Languages and Frameworks
+## Ready to Hack!
 
-1. C - Core library API exposed via the C89 ABI
-2. C++ - Single header file (rs.hpp) wrapper around C API, providing classes and exceptions
+Our library offers a high level API for using Intel RealSense depth cameras (in addition to lower level ones).
+The following snippet shows how to start streaming frames and extracting the depth value of a pixel:
 
-## Functionality
+```cpp
+// Create a Pipeline - this serves as a top-level API for streaming and processing frames
+rs2::pipeline p;
 
-1. Native streams: depth, color, infrared
-2. Synthetic streams: rectified images, depth aligned to color and vice versa, etc.
-3. Intrinsic/extrinsic calibration information
-4. Majority of hardware-specific functionality for individual camera generations (UVC XU controls)
-5. Multi-camera capture across heterogeneous camera architectures (e.g. mix R200 and F200 in same application) 
+// Configure and start the pipeline
+p.start();
 
-### Firmware Update
+while (true)
+{
+    // Block program until frames arrive
+    rs2::frameset frames = p.wait_for_frames(); 
+    
+    // Try to get a frame of a depth image
+    rs2::depth_frame depth = frames.get_depth_frame(); 
 
-All RealSense™ cameras ship with proprietary firmware. This firmware is periodically updated with critical bugfixes, however the API does not currently expose functionality to upload new firmware. A supported update path is available on Windows 8.1 and Windows 10 systems via the [Intel® RealSense™ DCM](https://downloadcenter.intel.com/download/25044/Intel-RealSense-Depth-Camera-Manager-DCM-) (Depth Camera Manager). Installing the DCM on a supported machine with an attached camera will automatically flash the latest firmware released by Intel.
+    // Get the depth frame's dimensions
+    float width = depth.get_width();
+    float height = depth.get_height();
+    
+    // Query the distance from the camera to the object in the center of the image
+    float dist_to_center = depth.get_distance(width / 2, height / 2);
+    
+    // Print the distance 
+    std::cout << "The camera is facing an object " << dist_to_center << " meters away \r";
+}
+```
+For more information on the library, please follow our [examples](./examples), and read the [documentation](./doc) to learn more.
 
-| Camera | F/W |
-| ------ | --- |
-| R200 | 1.0.72.04 |
-| F200 | 2.60.0.0 |
-| SR300 |3.10.10.0 |
-
-# Installation Guide
-
-The Intel® RealSense™ Cross Platform API communicates with RealSense™ devices directly via the UVC and USB protocols. It does not link against the RealSense™ SDK runtime. Most of the library source code is platform agnostic, but there is a small UVC abstraction layer with platform-specific backends, including:
-  * A video4linux2 backend which provides kernel-space access to UVC devices on Linux.
-  * A libuvc backend which provides user-space access to UVC devices on Linux and Mac OS X (built with libusb).
-  * A Windows Media Foundation backend which provides kernel-space access to UVC devices on Windows 8.1 and above.
-
-**New Users:** A comprehensive installation guide is [available here](./doc/installation.md)
-
-## Hardware Requirements
-Developer kits containing the necessary hardware to use this library are available for purchase at [this link](http://click.intel.com/realsense.html). In addition, several consumer tablets and laptops with integrated cameras may also function, such as the [HP Spectre x2 with R200](http://store.hp.com/us/en/ContentView?storeId=10151&langId=-1&catalogId=10051&eSpotName=new-detachable).
-
-Developer kits **require** USB 3.0. RealSense™ cameras do not provide backwards compatibility with USB 2.0. Not all USB host chipsets are compatible with this library, although it has been validated with recent generations of the Intel Host Controller chipset. An exhaustive list of incompatible hardware is not presently provided. On x86, a Haswell or newer architecture is recommended.
-
-For small-form factor usages, this library has been demonstrated to work on the following boards:
-  * [Intel Compute Stick, BOXSTK1AW32SCR](http://www.amazon.com/Intel-Compute-BOXSTK1AW32SCR-Windows-32-bit/dp/B01ASB0DJ8)
-  * [MinnowBoard Max](http://minnowboard.org)
-  * [Kangaroo MD2B](http://www.amazon.com/Kangaroo-MD2B-Mobile-Desktop-Computer/dp/B017J20D8U)
-  * [UP Board](http://www.up-board.org/kickstarter/up-intel-realsense-technology/)
-
-## Integrations
-
-The library has been integrated with a number of third-party components and operating systems. While most of these projects are not directly supported by the team, they are useful resources for users of this library.
-
-  * [Robotic Operating System](https://github.com/intel-ros/realsense) (Intel Supported, R200 Only)
-  * [Yocto / WindRiver Linux](https://github.com/IntelRealSense/meta-intel-librealsense)
-  * [Arch Linux](https://aur.archlinux.org/packages/librealsense/)
-
-## Documentation
-
-A comprehensive suite of sample and tutorial applications are provided in the `/examples` subdirectory. For new users, it is best to review the tutorial series of apps which are designed to progressively introduce API features.
-
-  * [Installation Instructions](./doc/installation.md) - Comprehensive platform-specific installation steps
-  * [C API](./include/librealsense/rs.h) - With doxygen-style API comments
-  * [Projection APIs](./doc/projection.md) - A guide on coordinate systems, calibration information, and projection
-  * [Camera Spec Sheet](./doc/camera_specs.md) - A brief overview of R200, F200 and SR300
-  * [Developer Notes](./doc/dev_log.md) - Several informal notes gathered during internal releases
+## Contributing
+In order to contribute to Intel RealSense SDK, please follow our [contribution guidelines](CONTRIBUTING.md).
 
 ## License
-
-Copyright 2015 Intel Corporation
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this project except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+This project is licensed under the [Apache License, Version 2.0](LICENSE). 
+Copyright 2017 Intel Corporation

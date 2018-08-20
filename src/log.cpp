@@ -1,58 +1,162 @@
 #include "types.h"
 
 #include <fstream>
-#include <iostream>
-#include <algorithm>
-#include <ctime>
 
-rs_log_severity rsimpl::minimum_log_severity = RS_LOG_SEVERITY_NONE;
-static rs_log_severity minimum_console_severity = RS_LOG_SEVERITY_NONE;
-static rs_log_severity minimum_file_severity = RS_LOG_SEVERITY_NONE;
-static std::ofstream log_file;
+#if BUILD_EASYLOGGINGPP
+INITIALIZE_EASYLOGGINGPP
 
-void rsimpl::log(rs_log_severity severity, const std::string & message)
+namespace librealsense
 {
-    if(static_cast<int>(severity) < minimum_log_severity) return;
-
-    std::time_t t = std::time(nullptr); char buffer[20];
-    std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
-
-    if(severity >= minimum_file_severity)
+    class logger_type
     {
-        switch(severity)
+        rs2_log_severity minimum_log_severity = RS2_LOG_SEVERITY_NONE;
+        rs2_log_severity minimum_console_severity = RS2_LOG_SEVERITY_NONE;
+        rs2_log_severity minimum_file_severity = RS2_LOG_SEVERITY_NONE;
+        rs2_log_severity minimum_callback_severity = RS2_LOG_SEVERITY_NONE;
+
+        std::mutex log_mutex;
+        std::ofstream log_file;
+        log_callback_ptr callback;
+
+        std::string filename;
+        const std::string log_id = "librealsense";
+
+    public:
+        static el::Level severity_to_level(rs2_log_severity severity)
         {
-        case RS_LOG_SEVERITY_DEBUG: log_file << buffer << " DEBUG: " << message << std::endl; break;
-        case RS_LOG_SEVERITY_INFO:  log_file << buffer << " INFO: " << message << std::endl; break;
-        case RS_LOG_SEVERITY_WARN:  log_file << buffer << " WARN: " << message << std::endl; break;
-        case RS_LOG_SEVERITY_ERROR: log_file << buffer << " ERROR: " << message << std::endl; break;
-        case RS_LOG_SEVERITY_FATAL: log_file << buffer << " FATAL: " << message << std::endl; break;
-        default: throw std::logic_error("not a valid severity for log message");
+            switch (severity)
+            {
+            case RS2_LOG_SEVERITY_DEBUG: return el::Level::Debug;
+            case RS2_LOG_SEVERITY_INFO: return el::Level::Info;
+            case RS2_LOG_SEVERITY_WARN: return el::Level::Warning;
+            case RS2_LOG_SEVERITY_ERROR: return el::Level::Error;
+            case RS2_LOG_SEVERITY_FATAL: return el::Level::Fatal;
+            default: return el::Level::Unknown;
+            }
         }
-    }
 
-    if(severity >= minimum_console_severity)
-    {
-        switch(severity)
+        void open() const
         {
-        case RS_LOG_SEVERITY_DEBUG: std::cout << "rs.debug: " << message << std::endl; break;
-        case RS_LOG_SEVERITY_INFO:  std::cout << "rs.info: " << message << std::endl; break;
-        case RS_LOG_SEVERITY_WARN:  std::cout << "rs.warn: " << message << std::endl; break;
-        case RS_LOG_SEVERITY_ERROR: std::cout << "rs.error: " << message << std::endl; break;
-        case RS_LOG_SEVERITY_FATAL: std::cout << "rs.fatal: " << message << std::endl; break;
-        default: throw std::logic_error("not a valid severity for log message");
+            el::Configurations defaultConf;
+            defaultConf.setToDefault();
+            // To set GLOBAL configurations you may use
+
+            defaultConf.setGlobally(el::ConfigurationType::ToFile, "false");
+            defaultConf.setGlobally(el::ConfigurationType::ToStandardOutput, "false");
+            defaultConf.setGlobally(el::ConfigurationType::MaxLogFileSize, "2097152");
+            defaultConf.setGlobally(el::ConfigurationType::LogFlushThreshold, "10");
+            defaultConf.setGlobally(el::ConfigurationType::Format, " %datetime{%d/%M %H:%m:%s,%g} %level [%thread] (%fbase:%line) %msg");
+
+            for (int i = minimum_console_severity; i < RS2_LOG_SEVERITY_NONE; i++)
+            {
+                defaultConf.set(severity_to_level(static_cast<rs2_log_severity>(i)),
+                    el::ConfigurationType::ToStandardOutput, "true");
+            }
+
+            for (int i = minimum_file_severity; i < RS2_LOG_SEVERITY_NONE; i++)
+            {
+                defaultConf.setGlobally(el::ConfigurationType::Filename, filename);
+                defaultConf.set(severity_to_level(static_cast<rs2_log_severity>(i)),
+                    el::ConfigurationType::ToFile, "true");
+            }
+
+            el::Loggers::reconfigureLogger(log_id, defaultConf);
         }
-    }
+
+        void open_def() const
+        {
+            el::Configurations defaultConf;
+            defaultConf.setToDefault();
+            // To set GLOBAL configurations you may use
+
+            defaultConf.setGlobally(el::ConfigurationType::ToFile, "false");
+            defaultConf.setGlobally(el::ConfigurationType::ToStandardOutput, "false");
+
+            el::Loggers::reconfigureLogger(log_id, defaultConf);
+        }
+
+
+        logger_type()
+            : callback(nullptr, [](rs2_log_callback*) {}),
+              filename(to_string() << datetime_string() << ".log")
+        {
+            rs2_log_severity severity;
+            if (try_get_log_severity(severity))
+            {
+                log_to_file(severity, filename.c_str());
+            }
+            else
+            {
+                open_def();
+            }
+        }
+
+        static bool try_get_log_severity(rs2_log_severity& severity)
+        {
+            static const char* severity_var_name = "LRS_LOG_LEVEL";
+            auto content = getenv(severity_var_name);
+
+            if (content)
+            {
+                std::string content_str(content);
+                std::transform(content_str.begin(), content_str.end(), content_str.begin(), ::tolower);
+
+                for (uint32_t i = 0; i < RS2_LOG_SEVERITY_COUNT; i++)
+                {
+                    auto current = (rs2_log_severity)i;
+                    std::string name = librealsense::get_string(current);
+                    std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+                    if (content_str == name)
+                    {
+                        severity = current;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        void log_to_console(rs2_log_severity min_severity)
+        {
+            minimum_console_severity = min_severity;
+            open();
+        }
+
+        void log_to_file(rs2_log_severity min_severity, const char * file_path)
+        {
+            if (!try_get_log_severity(minimum_file_severity))
+                minimum_file_severity = min_severity;
+
+            if (file_path)
+                filename = file_path;
+
+            open();
+        }
+    };
+
+    static logger_type logger;
 }
 
-void rsimpl::log_to_console(rs_log_severity min_severity)
+void librealsense::log_to_console(rs2_log_severity min_severity)
 {
-    minimum_console_severity = min_severity;
-    rsimpl::minimum_log_severity = std::min(minimum_console_severity, minimum_file_severity);
+    logger.log_to_console(min_severity);
 }
 
-void rsimpl::log_to_file(rs_log_severity min_severity, const char * file_path)
+void librealsense::log_to_file(rs2_log_severity min_severity, const char * file_path)
 {
-    minimum_file_severity = min_severity;
-    log_file.open(file_path, std::ostream::out | std::ostream::app);
-    rsimpl::minimum_log_severity = std::min(minimum_console_severity, minimum_file_severity);
+    logger.log_to_file(min_severity, file_path);
 }
+
+#else // BUILD_EASYLOGGINGPP
+
+void librealsense::log_to_console(rs2_log_severity min_severity)
+{
+}
+
+void librealsense::log_to_file(rs2_log_severity min_severity, const char * file_path)
+{
+}
+
+#endif // BUILD_EASYLOGGINGPP
+

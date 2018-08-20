@@ -1,164 +1,285 @@
 // License: Apache 2.0. See LICENSE file in root directory.
 // Copyright(c) 2015 Intel Corporation. All Rights Reserved.
 
+#include "environment.h"
 #include "device.h"
-#include "sync.h"
 
-using namespace rsimpl;
+using namespace librealsense;
 
-rs_device::rs_device(std::shared_ptr<rsimpl::uvc::device> device, const rsimpl::static_device_info & info) : device(device), config(info), capturing(false),
-    depth(config, RS_STREAM_DEPTH), color(config, RS_STREAM_COLOR), infrared(config, RS_STREAM_INFRARED), infrared2(config, RS_STREAM_INFRARED2),
-    points(depth), rect_color(color), color_to_depth(color, depth), depth_to_color(depth, color), depth_to_rect_color(depth, rect_color), infrared2_to_depth(infrared2,depth), depth_to_infrared2(depth,infrared2)
+std::shared_ptr<matcher> matcher_factory::create(rs2_matchers matcher, std::vector<stream_interface*> profiles)
 {
-    streams[RS_STREAM_DEPTH    ] = native_streams[RS_STREAM_DEPTH]     = &depth;
-    streams[RS_STREAM_COLOR    ] = native_streams[RS_STREAM_COLOR]     = &color;
-    streams[RS_STREAM_INFRARED ] = native_streams[RS_STREAM_INFRARED]  = &infrared;
-    streams[RS_STREAM_INFRARED2] = native_streams[RS_STREAM_INFRARED2] = &infrared2;
-    streams[RS_STREAM_POINTS]                                          = &points;
-    streams[RS_STREAM_RECTIFIED_COLOR]                                 = &rect_color;
-    streams[RS_STREAM_COLOR_ALIGNED_TO_DEPTH]                          = &color_to_depth;
-    streams[RS_STREAM_DEPTH_ALIGNED_TO_COLOR]                          = &depth_to_color;
-    streams[RS_STREAM_DEPTH_ALIGNED_TO_RECTIFIED_COLOR]                = &depth_to_rect_color;
-    streams[RS_STREAM_INFRARED2_ALIGNED_TO_DEPTH]                      = &infrared2_to_depth;
-    streams[RS_STREAM_DEPTH_ALIGNED_TO_INFRARED2]                      = &depth_to_infrared2;
-}
-
-rs_device::~rs_device()
-{
-
-}
-
-bool rs_device::supports_option(rs_option option) const 
-{ 
-    if(uvc::is_pu_control(option)) return true;
-    for(auto & o : config.info.options) if(o.option == option) return true;
-    return false; 
-}
-
-void rs_device::enable_stream(rs_stream stream, int width, int height, rs_format format, int fps)
-{
-    if(capturing) throw std::runtime_error("streams cannot be reconfigured after having called rs_start_device()");
-    if(config.info.stream_subdevices[stream] == -1) throw std::runtime_error("unsupported stream");
-
-    config.requests[stream] = {true, width, height, format, fps};
-    for(auto & s : native_streams) s->archive.reset(); // Changing stream configuration invalidates the current stream info
-}
-
-void rs_device::enable_stream_preset(rs_stream stream, rs_preset preset)
-{
-    if(capturing) throw std::runtime_error("streams cannot be reconfigured after having called rs_start_device()");
-    if(!config.info.presets[stream][preset].enabled) throw std::runtime_error("unsupported stream");
-
-    config.requests[stream] = config.info.presets[stream][preset];
-    for(auto & s : native_streams) s->archive.reset(); // Changing stream configuration invalidates the current stream info
-}
-
-void rs_device::disable_stream(rs_stream stream)
-{
-    if(capturing) throw std::runtime_error("streams cannot be reconfigured after having called rs_start_device()");
-    if(config.info.stream_subdevices[stream] == -1) throw std::runtime_error("unsupported stream");
-
-    config.requests[stream] = {};
-    for(auto & s : native_streams) s->archive.reset(); // Changing stream configuration invalidates the current stream info
-}
-
-void rs_device::start()
-{
-    if(capturing) throw std::runtime_error("cannot restart device without first stopping device");
-        
-    auto selected_modes = config.select_modes();
-    auto archive = std::make_shared<frame_archive>(selected_modes, select_key_stream(selected_modes));
-    auto timestamp_reader = create_frame_timestamp_reader();
-
-    for(auto & s : native_streams) s->archive.reset(); // Starting capture invalidates the current stream info, if any exists from previous capture
-
-    // Satisfy stream_requests as necessary for each subdevice, calling set_mode and
-    // dispatching the uvc configuration for a requested stream to the hardware
-    for(auto mode_selection : selected_modes)
+    switch (matcher)
     {
-        // Create a stream buffer for each stream served by this subdevice mode
-        for(auto & stream_mode : mode_selection.get_outputs())
-        {                    
-            // If this is one of the streams requested by the user, store the buffer so they can access it
-            if(config.requests[stream_mode.first].enabled) native_streams[stream_mode.first]->archive = archive;
-        }
+    case RS2_MATCHER_DI:
+        return create_DI_matcher(profiles);
+    case RS2_MATCHER_DI_C:
+        return create_DI_C_matcher(profiles);
+    case RS2_MATCHER_DLR_C:
+        return create_DLR_C_matcher(profiles);
+    case RS2_MATCHER_DLR:
+        return create_DLR_matcher(profiles);
+    case RS2_MATCHER_DEFAULT:default:
+        LOG_DEBUG("Created default matcher");
+        return create_timestamp_matcher(profiles);
+        break;
+    }
+}
+stream_interface* librealsense::find_profile(rs2_stream stream, int index, std::vector<stream_interface*> profiles)
+{
+    auto prof = std::find_if(profiles.begin(), profiles.end(), [&](stream_interface* profile)
+    {
+        return profile->get_stream_type() == stream && profile->get_stream_index() == index;
+    });
 
-        // Initialize the subdevice and set it to the selected mode
-        set_subdevice_mode(*device, mode_selection.mode.subdevice, mode_selection.mode.native_dims.x, mode_selection.mode.native_dims.y, mode_selection.mode.pf.fourcc, mode_selection.mode.fps, 
-            [mode_selection, archive, timestamp_reader](const void * frame) mutable
+    if (prof != profiles.end())
+        return *prof;
+    else
+        return nullptr;
+}
+
+std::shared_ptr<matcher> matcher_factory::create_DLR_C_matcher(std::vector<stream_interface*> profiles)
+{
+    auto color  = find_profile(RS2_STREAM_COLOR, 0, profiles);
+    if (!color)
+    {
+        LOG_DEBUG("Created default matcher");
+        return create_timestamp_matcher(profiles);
+    }
+
+    return create_timestamp_composite_matcher({ create_DLR_matcher(profiles),
+        create_identity_matcher(color) });
+}
+
+std::shared_ptr<matcher> matcher_factory::create_DI_C_matcher(std::vector<stream_interface*> profiles)
+{
+    auto color = find_profile(RS2_STREAM_COLOR, 0, profiles);
+    if (!color)
+    {
+        LOG_DEBUG("Created default matcher");
+        return create_timestamp_matcher(profiles);
+    }
+
+    return create_timestamp_composite_matcher({ create_DI_matcher(profiles),
+        create_identity_matcher(profiles[2]) });
+}
+
+std::shared_ptr<matcher> matcher_factory::create_DLR_matcher(std::vector<stream_interface*> profiles)
+{
+    auto depth = find_profile(RS2_STREAM_DEPTH, 0, profiles);
+    auto left = find_profile(RS2_STREAM_INFRARED, 1, profiles);
+    auto right = find_profile(RS2_STREAM_INFRARED, 2, profiles);
+
+    if (!depth || !left || !right)
+    {
+        LOG_DEBUG("Created default matcher");
+        return create_timestamp_matcher(profiles);
+    }
+    return create_frame_number_matcher({ depth , left , right });
+}
+
+std::shared_ptr<matcher> matcher_factory::create_DI_matcher(std::vector<stream_interface*> profiles)
+{
+    auto depth = find_profile(RS2_STREAM_DEPTH, 0, profiles);
+    auto ir = find_profile(RS2_STREAM_INFRARED, 1, profiles);
+
+    if (!depth || !ir)
+    {
+        LOG_DEBUG("Created default matcher");
+        return create_timestamp_matcher(profiles);
+    }
+    return create_frame_number_matcher({ depth , ir });
+}
+
+std::shared_ptr<matcher> matcher_factory::create_frame_number_matcher(std::vector<stream_interface*> profiles)
+{
+    std::vector<std::shared_ptr<matcher>> matchers;
+    for (auto& p : profiles)
+        matchers.push_back(std::make_shared<identity_matcher>(p->get_unique_id(), p->get_stream_type()));
+
+    return create_frame_number_composite_matcher(matchers);
+}
+std::shared_ptr<matcher> matcher_factory::create_timestamp_matcher(std::vector<stream_interface*> profiles)
+{
+    std::vector<std::shared_ptr<matcher>> matchers;
+    for (auto& p : profiles)
+        matchers.push_back(std::make_shared<identity_matcher>(p->get_unique_id(), p->get_stream_type()));
+
+    return create_timestamp_composite_matcher(matchers);
+}
+
+std::shared_ptr<matcher> matcher_factory::create_identity_matcher(stream_interface *profile)
+{
+    return std::make_shared<identity_matcher>(profile->get_unique_id(), profile->get_stream_type());
+}
+
+std::shared_ptr<matcher> matcher_factory::create_frame_number_composite_matcher(std::vector<std::shared_ptr<matcher>> matchers)
+{
+    return std::make_shared<frame_number_composite_matcher>(matchers);
+}
+std::shared_ptr<matcher> matcher_factory::create_timestamp_composite_matcher(std::vector<std::shared_ptr<matcher>> matchers)
+{
+    return std::make_shared<timestamp_composite_matcher>(matchers);
+}
+
+device::device(std::shared_ptr<context> ctx,
+               const platform::backend_device_group group,
+               bool device_changed_notifications)
+    : _context(ctx), _group(group), _is_valid(true),
+      _device_changed_notifications(device_changed_notifications)
+{
+    _profiles_tags = lazy<std::vector<tagged_profile>>([this]() { return get_profiles_tags(); });
+
+    if (_device_changed_notifications)
+    {
+        auto cb = new devices_changed_callback_internal([this](rs2_device_list* removed, rs2_device_list* added)
         {
-            // Ignore any frames which appear corrupted or invalid
-            if(!timestamp_reader->validate_frame(mode_selection.mode, frame)) return;
-
-            // Determine the timestamp for this frame
-            int timestamp = timestamp_reader->get_frame_timestamp(mode_selection.mode, frame);
-
-            // Obtain buffers for unpacking the frame
-            std::vector<byte *> dest;
-            for(auto & output : mode_selection.get_outputs()) dest.push_back(archive->alloc_frame(output.first, timestamp));
-
-            // Unpack the frame and commit it to the archive
-            mode_selection.unpack(dest.data(), reinterpret_cast<const byte *>(frame));
-            for(auto & output : mode_selection.get_outputs()) archive->commit_frame(output.first);
+            // Update is_valid variable when device is invalid
+            std::lock_guard<std::mutex> lock(_device_changed_mtx);
+            for (auto& dev_info : removed->list)
+            {
+                if (dev_info.info->get_device_data() == _group)
+                {
+                    _is_valid = false;
+                    return;
+                }
+            }
         });
+
+        _callback_id = _context->register_internal_device_callback({ cb, [](rs2_devices_changed_callback* p) { p->release(); } });
     }
-    
-    this->archive = archive;
-    on_before_start(selected_modes);
-    start_streaming(*device, config.info.num_libuvc_transfer_buffers);
-    capture_started = std::chrono::high_resolution_clock::now();
-    capturing = true;
 }
 
-void rs_device::stop()
+device::~device()
 {
-    if(!capturing) throw std::runtime_error("cannot stop device without first starting device");
-    stop_streaming(*device);
-    capturing = false;
-}
-
-void rs_device::wait_all_streams()
-{
-    if(!capturing) return;
-    if(!archive) return;
-
-    archive->wait_for_frames();
-}
-
-bool rs_device::poll_all_streams()
-{
-    if(!capturing) return false;
-    if(!archive) return false;
-    return archive->poll_for_frames();
-}
-
-void rs_device::get_option_range(rs_option option, double & min, double & max, double & step)
-{
-    if(uvc::is_pu_control(option))
+    if (_device_changed_notifications)
     {
-        int mn, mx;
-        uvc::get_pu_control_range(get_device(), config.info.stream_subdevices[RS_STREAM_COLOR], option, &mn, &mx);
-        min = mn;
-        max = mx;
-        step = 1;
-        return;
+        _context->unregister_internal_device_callback(_callback_id);
     }
+    _sensors.clear();
+}
 
-    for(auto & o : config.info.options)
+int device::add_sensor(std::shared_ptr<sensor_interface> sensor_base)
+{
+    _sensors.push_back(sensor_base);
+    return (int)_sensors.size() - 1;
+}
+
+int device::assign_sensor(std::shared_ptr<sensor_interface> sensor_base, uint8_t idx)
+{
+    try
     {
-        if(o.option == option)
+        _sensors[idx] = sensor_base;
+        return (int)_sensors.size() - 1;
+    }
+    catch (std::out_of_range)
+    {
+        throw invalid_value_exception(to_string() << "Cannot assign sensor - invalid subdevice value" << idx);
+    }
+}
+
+uvc_sensor& device::get_uvc_sensor(int sub)
+{
+    return dynamic_cast<uvc_sensor&>(*_sensors[sub]);
+}
+
+size_t device::get_sensors_count() const
+{
+    return static_cast<unsigned int>(_sensors.size());
+}
+
+sensor_interface& device::get_sensor(size_t subdevice)
+{
+    try
+    {
+        return *(_sensors.at(subdevice));
+    }
+    catch (std::out_of_range)
+    {
+        throw invalid_value_exception("invalid subdevice value");
+    }
+}
+
+size_t device::find_sensor_idx(const sensor_interface& s) const
+{
+    int idx = 0;
+    for (auto&& sensor : _sensors)
+    {
+        if (&s == sensor.get()) return idx;
+        idx++;
+    }
+    throw std::runtime_error("Sensor not found!");
+}
+
+const sensor_interface& device::get_sensor(size_t subdevice) const
+{
+    try
+    {
+        return *(_sensors.at(subdevice));
+    }
+    catch (std::out_of_range)
+    {
+        throw invalid_value_exception("invalid subdevice value");
+    }
+}
+
+void device::hardware_reset()
+{
+    throw not_implemented_exception(to_string() << __FUNCTION__ << " is not implemented for this device!");
+}
+
+std::shared_ptr<matcher> librealsense::device::create_matcher(const frame_holder& frame) const
+{
+
+    return std::make_shared<identity_matcher>( frame.frame->get_stream()->get_unique_id(), frame.frame->get_stream()->get_stream_type());
+}
+
+std::pair<uint32_t, rs2_extrinsics> librealsense::device::get_extrinsics(const stream_interface& stream) const
+{
+    auto stream_index = stream.get_unique_id();
+    auto pair = _extrinsics.at(stream_index);
+    auto pin_stream = pair.second;
+    rs2_extrinsics ext{};
+    if (environment::get_instance().get_extrinsics_graph().try_fetch_extrinsics(*pin_stream, stream, &ext) == false)
+    {
+        throw std::runtime_error(to_string() << "Failed to fetch extrinsics between pin stream (" << pin_stream->get_unique_id() << ") to given stream (" << stream.get_unique_id() << ")");
+    }
+    return std::make_pair(pair.first, ext);
+}
+
+void librealsense::device::register_stream_to_extrinsic_group(const stream_interface& stream, uint32_t groupd_index)
+{
+    auto iter = std::find_if(_extrinsics.begin(),
+                           _extrinsics.end(),
+                           [groupd_index](const std::pair<int, std::pair<uint32_t, std::shared_ptr<const stream_interface>>>& p) { return p.second.first == groupd_index; });
+    if (iter == _extrinsics.end())
+    {
+        //First stream to register for this group
+        _extrinsics[stream.get_unique_id()] = std::make_pair(groupd_index, stream.shared_from_this());
+    }
+    else
+    {
+        //iter->second holds the group_id and the key stream
+        _extrinsics[stream.get_unique_id()] = iter->second;
+    }
+}
+
+void librealsense::device::tag_profiles(stream_profiles profiles) const
+{
+    for (auto profile : profiles)
+    {
+        for (auto tag : *_profiles_tags)
         {
-            min = o.min;
-            max = o.max;
-            step = o.step;
-            return;
+            auto vp = dynamic_cast<video_stream_profile_interface*>(profile.get());
+            if (vp)
+            {
+                if ((tag.stream == RS2_STREAM_ANY || vp->get_stream_type() == tag.stream) &&
+                    (tag.format == RS2_FORMAT_ANY || vp->get_format() == tag.format) &&
+                    (tag.width == -1 || vp->get_width() == tag.width) &&
+                    (tag.height == -1 || vp->get_height() == tag.height) &&
+                    (tag.fps == -1 || vp->get_framerate() == tag.fps) &&
+                    (tag.stream_index == -1 || vp->get_stream_index() == tag.stream_index))
+                    profile->tag_profile(tag.tag);
+            }
         }
     }
-
-    throw std::logic_error("range not specified");
-}
-
-const char * rs_device::get_usb_port_id() const
-{
-    return rsimpl::uvc::get_usb_port_id(*device);
 }
